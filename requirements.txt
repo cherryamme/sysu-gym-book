@@ -1,0 +1,4 @@
+playwright
+ddddocr
+python-dotenv
+schedule

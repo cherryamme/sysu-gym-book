@@ -1,0 +1,7 @@
+# 体育馆预约配置
+USERNAME=your_username
+PASSWORD=your_password
+CAMPUS_NAME=广州校区南校园
+FACILITY_NAME=南校园新体育馆羽毛球场（学生）
+DATE_NUMBER=9-17
+TIME_SLOT=21:00-22:00

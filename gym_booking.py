@@ -14,6 +14,7 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, Page
 import ddddocr
 from config import DEFAULT_CONFIG, XPATHS
+from timezone_utils import get_beijing_time, get_utc_time, beijing_to_utc, utc_to_beijing, parse_booking_time, format_beijing_time
 
 # 配置日志
 logging.basicConfig(
@@ -274,7 +275,7 @@ class GymBookingBot:
         timeout_time = None
         if self.booking_time:
             timeout_time = self.booking_time + timedelta(minutes=10)
-            logger.info(f"日期选择超时时间: {timeout_time}")
+            logger.info(f"日期选择超时时间: {format_beijing_time(timeout_time)}")
         
         retry_count = 0
         while True:
@@ -282,7 +283,7 @@ class GymBookingBot:
             logger.info(f"第 {retry_count} 次尝试选择日期")
             
             # 检查是否超时
-            if timeout_time and datetime.now() > timeout_time:
+            if timeout_time and get_utc_time() > timeout_time:
                 raise Exception(f"超出预约时间10分钟，停止日期选择")
             
             # 查找并点击指定的日期
@@ -344,14 +345,22 @@ class GymBookingBot:
         raise Exception(f"时间段 {self.config['time_slot']} 不可预约")
         
     async def step10_click_book_button(self):
-        """步骤10: 点击预约按钮"""
+        """步骤10: 点击预约按钮并等待弹窗"""
         logger.info("步骤10: 点击预约按钮")
         
         book_button = await self.page.wait_for_selector(XPATHS['book_button'], timeout=10000)
         await self.human_like_click(book_button)
         
-        # 等待预约结果
-        await self.human_like_delay(3, 5)
+        # 等待弹窗出现
+        logger.info("等待预约结果弹窗...")
+        try:
+            await self.page.wait_for_selector('.modal-content', timeout=15000)
+            logger.info("预约结果弹窗已出现")
+        except Exception as e:
+            logger.warning(f"未检测到预约结果弹窗: {e}")
+        
+        # 等待弹窗内容加载完成
+        await self.human_like_delay(2, 3)
         
     async def step11_check_success(self) -> bool:
         """步骤11: 检查预约是否成功"""
@@ -361,25 +370,62 @@ class GymBookingBot:
             # 等待页面加载完成
             await self.human_like_delay(2, 3)
             
-            # 获取页面所有文本内容
-            page_text = await self.page.text_content('body')
-            
-            if "预约成功" in page_text:
-                logger.info("🎉 预约成功！")
-                return True
+            # 检查是否存在弹窗
+            modal_content = await self.page.query_selector('.modal-content')
+            if modal_content:
+                # 获取弹窗内容
+                modal_text = await modal_content.text_content()
+                logger.info(f"弹窗内容: {modal_text}")
+                
+                # 检查是否包含成功文本
+                if "预约成功" in modal_text or "您已经预约成功" in modal_text:
+                    logger.info("🎉 预约成功！")
+                    return True
+                else:
+                    logger.warning("弹窗中未检测到预约成功文本")
+                    return False
             else:
-                logger.warning("未检测到预约成功文本")
-                return False
+                # 如果没有弹窗，检查页面文本
+                page_text = await self.page.text_content('body')
+                logger.info(f"页面内容: {page_text}")
+                
+                if "预约成功" in page_text:
+                    logger.info("🎉 预约成功！")
+                    return True
+                else:
+                    logger.warning("未检测到预约成功文本")
+                    return False
                 
         except Exception as e:
             logger.error(f"检查预约结果失败: {e}")
             return False
             
+    async def run_booking_from_step8(self) -> bool:
+        """从第8步开始执行预约流程（用于重试）"""
+        try:
+            logger.info("从第8步开始执行预约流程")
+            
+            await self.step8_select_date()
+            await self.step9_select_time_slot()
+            await self.step10_click_book_button()
+            
+            success = await self.step11_check_success()
+            return success
+            
+        except Exception as e:
+            logger.error(f"从第8步开始的预约流程失败: {e}")
+            if self.config['debug']:
+                # 调试模式下截图保存
+                await self.page.screenshot(path='error_screenshot.png')
+                logger.info("错误截图已保存为 error_screenshot.png")
+            return False
+
     async def run_booking(self) -> bool:
         """执行完整的预约流程"""
         try:
             logger.info("开始执行体育馆预约流程")
             
+            # 执行前7步（一次性完成）
             await self.step1_open_website()
             await self.step2_login()
             await self.step3_solve_captcha()
@@ -387,18 +433,31 @@ class GymBookingBot:
             await self.step5_close_notification()
             await self.step6_select_campus()
             await self.step7_select_facility()
-            await self.step8_select_date()
-            await self.step9_select_time_slot()
-            await self.step10_click_book_button()
             
-            success = await self.step11_check_success()
-            
-            if success:
-                logger.info("✅ 预约流程完成，预约成功！")
-            else:
-                logger.warning("⚠️ 预约流程完成，但结果未知")
+            # 从第8步开始重试循环
+            retry_count = 0
+            while True:
+                retry_count += 1
+                logger.info(f"第 {retry_count} 次尝试预约")
                 
-            return success
+                # 检查是否超时
+                if self.booking_time:
+                    timeout_time = self.booking_time + timedelta(minutes=10)
+                    if get_utc_time() > timeout_time:
+                        logger.error(f"超出预约时间10分钟，停止重试")
+                        return False
+                
+                # 执行第8-11步
+                success = await self.run_booking_from_step8()
+                
+                if success:
+                    logger.info("✅ 预约流程完成，预约成功！")
+                    return True
+                else:
+                    logger.warning(f"第 {retry_count} 次预约失败，准备重试")
+                    # 刷新页面，准备重试
+                    await self.page.reload()
+                    await self.human_like_delay(2, 3)
             
         except Exception as e:
             logger.error(f"预约流程失败: {e}")
@@ -412,13 +471,13 @@ class GymBookingBot:
 async def wait_until_booking_time(booking_time: datetime):
     """等待到预约时间前1分钟"""
     start_time = booking_time - timedelta(minutes=1)
-    current_time = datetime.now()
+    current_time = get_utc_time()
     
     logger.info("=" * 50)
     logger.info("时间计算信息:")
-    logger.info(f"当前时间: {current_time}")
-    logger.info(f"预约时间: {booking_time}")
-    logger.info(f"启动时间: {start_time}")
+    logger.info(f"当前时间: {format_beijing_time(current_time)}")
+    logger.info(f"预约时间: {format_beijing_time(booking_time)}")
+    logger.info(f"启动时间: {format_beijing_time(start_time)}")
     logger.info(f"时间差: {start_time - current_time}")
     logger.info("=" * 50)
     
@@ -466,21 +525,23 @@ async def main():
     booking_time = None
     if args.booking_time:
         try:
-            booking_time = datetime.strptime(args.booking_time, '%Y-%m-%d %H:%M:%S')
-            current_time = datetime.now()
-            logger.info(f"当前时间: {current_time}")
-            logger.info(f"预约时间: {booking_time}")
+            # 解析用户输入的北京时间，转换为UTC时间存储
+            beijing_time = datetime.strptime(args.booking_time, '%Y-%m-%d %H:%M:%S')
+            booking_time = beijing_to_utc(beijing_time.replace(tzinfo=None))
+            current_time = get_utc_time()
+            logger.info(f"当前时间: {format_beijing_time(current_time)}")
+            logger.info(f"预约时间: {format_beijing_time(booking_time)}")
             
             if booking_time <= current_time:
                 logger.error(f"❌ 预约时间不能是过去时间！")
-                logger.error(f"当前时间: {current_time}")
-                logger.error(f"预约时间: {booking_time}")
-                logger.error(f"请设置未来的时间，例如: {(current_time + timedelta(minutes=10)).strftime('%Y-%m-%d %H:%M:%S')}")
+                logger.error(f"当前时间: {format_beijing_time(current_time)}")
+                logger.error(f"预约时间: {format_beijing_time(booking_time)}")
+                logger.error(f"请设置未来的时间，例如: {format_beijing_time(current_time + timedelta(minutes=10))}")
                 return
                 
         except ValueError:
             logger.error("预约时间格式错误，请使用: YYYY-MM-DD HH:MM:SS")
-            logger.error(f"正确格式示例: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            logger.error(f"正确格式示例: {format_beijing_time(get_utc_time())}")
             return
         
     # 检查必要参数
@@ -497,7 +558,7 @@ async def main():
     logger.info(f"时间段: {config['time_slot']}")
     logger.info(f"调试模式: {'开启' if config['debug'] else '关闭'}")
     if booking_time:
-        logger.info(f"预约时间: {booking_time}")
+        logger.info(f"预约时间: {format_beijing_time(booking_time)}")
     logger.info("=" * 50)
     
     # 如果设置了预约时间，等待到启动时间

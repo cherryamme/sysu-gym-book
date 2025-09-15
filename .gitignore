@@ -1,0 +1,4 @@
+web/
+*.pyc
+.env
+*.log

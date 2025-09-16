@@ -2,3 +2,4 @@ playwright
 ddddocr
 python-dotenv
 schedule
+pytz

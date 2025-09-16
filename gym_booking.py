@@ -14,7 +14,37 @@ from typing import Optional
 from playwright.async_api import async_playwright, Browser, Page
 import ddddocr
 from config import DEFAULT_CONFIG, XPATHS
-from timezone_utils import get_beijing_time, get_utc_time, beijing_to_utc, utc_to_beijing, parse_booking_time, format_beijing_time
+# 移除timezone_utils依赖，使用Python标准库
+import pytz
+
+# 时区处理函数
+def get_beijing_time():
+    """获取当前北京时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    return datetime.now(beijing_tz)
+
+def get_utc_time():
+    """获取当前UTC时间"""
+    return datetime.now(pytz.UTC)
+
+def beijing_to_utc(beijing_time):
+    """将北京时间转换为UTC时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    if beijing_time.tzinfo is None:
+        beijing_time = beijing_tz.localize(beijing_time)
+    return beijing_time.astimezone(pytz.UTC)
+
+def utc_to_beijing(utc_time):
+    """将UTC时间转换为北京时间"""
+    beijing_tz = pytz.timezone('Asia/Shanghai')
+    return utc_time.astimezone(beijing_tz)
+
+def format_beijing_time(dt):
+    """格式化时间为北京时间字符串"""
+    if dt.tzinfo is None:
+        dt = pytz.UTC.localize(dt)
+    beijing_time = dt.astimezone(pytz.timezone('Asia/Shanghai'))
+    return beijing_time.strftime('%Y-%m-%d %H:%M:%S')
 
 # 配置日志
 logging.basicConfig(
@@ -230,8 +260,21 @@ class GymBookingBot:
             logger.info("已关闭悬浮窗通知")
             await self.human_like_delay(2, 3)
         except Exception as e:
-            logger.warning(f"未找到悬浮窗关闭按钮或已自动关闭: {e}")
-            # 继续执行，不影响后续流程
+            logger.warning(f"未找到悬浮窗关闭按钮，尝试刷新页面: {e}")
+            try:
+                # 刷新页面
+                logger.info("正在刷新页面...")
+                await self.page.reload()
+                await self.human_like_delay(3, 5)
+                
+                # 再次尝试关闭悬浮窗
+                close_button = await self.page.wait_for_selector('button.btn-close', timeout=5000)
+                await self.human_like_click(close_button)
+                logger.info("刷新后成功关闭悬浮窗通知")
+                await self.human_like_delay(2, 3)
+            except Exception as e2:
+                logger.warning(f"刷新后仍未找到悬浮窗关闭按钮，直接进入下一步: {e2}")
+                # 继续执行，不影响后续流程
 
     async def step6_select_campus(self):
         """步骤6: 选择校区"""
@@ -321,8 +364,12 @@ class GymBookingBot:
             bookable_buttons = await row.query_selector_all(XPATHS['bookable_slot'])
             logger.debug(f"第 {idx+1} 行可预约按钮数量: {len(bookable_buttons)}")
             if bookable_buttons:
-                logger.info(f"第 {idx+1} 行存在可预约按钮，准备点击")
-                await self.human_like_click(bookable_buttons[0])
+                logger.info(f"第 {idx+1} 行存在可预约按钮，准备随机选择一个")
+                # 随机选择该行中的一个可预约按钮
+                selected_button = random.choice(bookable_buttons)
+                button_index = bookable_buttons.index(selected_button)
+                logger.info(f"第 {idx+1} 行共 {len(bookable_buttons)} 个可预约按钮，随机选择第 {button_index + 1} 个")
+                await self.human_like_click(selected_button)
                 logger.info(f"已选择时间段: {self.config['time_slot']}")
                 await self.human_like_delay(2, 3)
                 return
@@ -335,8 +382,10 @@ class GymBookingBot:
         logger.debug(f"页面中总共找到 {len(all_bookable_buttons)} 个可预约按钮")
         
         if all_bookable_buttons:
-            logger.info("找到可预约按钮，点击第一个")
-            await self.human_like_click(all_bookable_buttons[0])
+            # 随机选择一个可预约按钮
+            selected_button = random.choice(all_bookable_buttons)
+            logger.info(f"找到 {len(all_bookable_buttons)} 个可预约按钮，随机选择第 {all_bookable_buttons.index(selected_button) + 1} 个")
+            await self.human_like_click(selected_button)
             logger.info(f"已选择时间段: {self.config['time_slot']}")
             await self.human_like_delay(2, 3)
             return

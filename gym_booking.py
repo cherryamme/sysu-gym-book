@@ -337,7 +337,7 @@ class GymBookingBot:
                 if self.config['date_number'] in text:
                     await self.human_like_click(element)
                     logger.info(f"已选择日期: {text}")
-                    await self.human_like_delay(2, 3)
+                    await self.human_like_delay(0.2, 0.5)
                     return
             
             # 如果没找到日期，刷新页面
@@ -371,7 +371,7 @@ class GymBookingBot:
                 logger.info(f"第 {idx+1} 行共 {len(bookable_buttons)} 个可预约按钮，随机选择第 {button_index + 1} 个")
                 await self.human_like_click(selected_button)
                 logger.info(f"已选择时间段: {self.config['time_slot']}")
-                await self.human_like_delay(2, 3)
+                await self.human_like_delay(0.2, 0.5)
                 return
             else:
                 logger.debug(f"第 {idx+1} 行没有可预约按钮")
@@ -387,7 +387,7 @@ class GymBookingBot:
             logger.info(f"找到 {len(all_bookable_buttons)} 个可预约按钮，随机选择第 {all_bookable_buttons.index(selected_button) + 1} 个")
             await self.human_like_click(selected_button)
             logger.info(f"已选择时间段: {self.config['time_slot']}")
-            await self.human_like_delay(2, 3)
+            await self.human_like_delay(0.2, 0.5)
             return
         
         logger.error(f"未找到任何可预约按钮，时间段 {self.config['time_slot']} 不可预约")
@@ -409,7 +409,7 @@ class GymBookingBot:
             logger.warning(f"未检测到预约结果弹窗: {e}")
         
         # 等待弹窗内容加载完成
-        await self.human_like_delay(2, 3)
+        await self.human_like_delay(0.2, 0.5)
         
     async def step11_check_success(self) -> bool:
         """步骤11: 检查预约是否成功"""

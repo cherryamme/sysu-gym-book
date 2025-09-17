@@ -441,7 +441,7 @@ class GymBookingBot:
                 # 如果还有可用按钮，继续尝试
                 if all_bookable_buttons:
                     logger.info(f"还有 {len(all_bookable_buttons)} 个按钮可尝试")
-                    await self.human_like_delay(1, 2)
+                    await self.human_like_delay(0.1, 0.2)
         
         logger.error("所有可预约按钮都已尝试完毕，预约失败")
         return False
@@ -462,7 +462,7 @@ class GymBookingBot:
                 try:
                     await book_button.click()
                     click_count += 1
-                    await asyncio.sleep(0.125)  # 每秒8次 = 每125ms一次
+                    await asyncio.sleep(0.1)  # 每秒8次 = 每125ms一次
                     
                     # 检查是否出现弹窗
                     modal_content = await self.page.query_selector('.modal-content')
@@ -496,7 +496,7 @@ class GymBookingBot:
         
         try:
             # 等待页面加载完成
-            await self.human_like_delay(2, 3)
+            await self.human_like_delay(0.1, 0.3)
             
             # 检查是否存在弹窗
             modal_content = await self.page.query_selector('.modal-content')

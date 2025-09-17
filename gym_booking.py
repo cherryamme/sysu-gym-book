@@ -312,9 +312,9 @@ class GymBookingBot:
             
             # 没找到目标日期，等待1秒后刷新页面
             logger.info(f"未找到日期 {self.config['date_number']}，1秒后刷新页面")
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             await self.page.reload()
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
         
     async def step9_select_time_slot(self) -> List:
         """步骤9: 根据配置的时间段选择可预约按钮"""
@@ -369,13 +369,13 @@ class GymBookingBot:
         num_buttons = min(2, len(selected_buttons))
         final_selected_buttons = random.sample(selected_buttons, num_buttons)
         
-        logger.info(f"最终选择了 {len(final_selected_buttons)} 个时间段按钮")
+        # logger.info(f"最终选择了 {len(final_selected_buttons)} 个时间段按钮")
         
         # 点击选中的按钮
         for idx, button in enumerate(final_selected_buttons):
             await self.human_like_click(button)
             logger.info(f"已选择第 {idx+1} 个时间段按钮")
-            await self.human_like_delay(0.1, 0.2)
+            await self.human_like_delay(0.05, 0.1)
         
         return final_selected_buttons
         
